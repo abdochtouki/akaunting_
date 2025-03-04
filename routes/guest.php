@@ -15,13 +15,13 @@ Route::group(['prefix' => 'auth'], function () {
     Route::get('forgot', 'Auth\Forgot@create')->name('forgot');
     Route::post('forgot', 'Auth\Forgot@store')->name('forgot.store');
 
-    //Route::get('reset', 'Auth\Reset@create');
     Route::get('reset/{token}', 'Auth\Reset@create')->name('reset');
     Route::post('reset', 'Auth\Reset@store')->name('reset.store');
 
     Route::get('register', 'Auth\Register@create')->name('register');
     Route::post('register', 'Auth\Register@store')->name('register.store');
 });
+
 
 Route::get('/', function () {
     return view('home');
