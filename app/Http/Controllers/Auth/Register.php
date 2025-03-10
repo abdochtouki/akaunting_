@@ -42,67 +42,29 @@ class Register extends Controller
             $user = $this->createUser($validatedData);
             Log::info('User created successfully:', ['user' => $user]);
 
-            // Fire the Registered event
             event(new Registered($user));
 
-            // Log in the user
             Auth::login($user);
             Log::info('User logged in successfully:', ['user' => Auth::user()]);
 
-            // Get the authenticated user
-            $user = user();
+            $company = $this->createCompanyForUser($user);
 
-            // Check if the user is enabled
-            if (!$user->enabled) {
-                $this->logout();
-
-                return response()->json([
-                    'status' => null,
-                    'success' => false,
-                    'error' => true,
-                    'message' => trans('auth.disabled'),
-                    'data' => null,
-                    'redirect' => null,
-                ]);
-            }
-
-            // Get the user's company
-            $company = $user->withoutEvents(function () use ($user) {
-                return $user->companies()->enabled()->first();
-            });
-
-            // Logout if no company is assigned
             if (!$company) {
                 $this->logout();
-
                 return response()->json([
                     'status' => null,
                     'success' => false,
                     'error' => true,
-                    'message' => trans('auth.error.no_company'),
+                    'message' => trans('auth.error.company_creation_failed'),
                     'data' => null,
                     'redirect' => null,
                 ]);
             }
 
-            if ($user->isCustomer()) {
-                $path = session('url.intended', '');
+            $user->companies()->attach($company->id);
+            $company->makeCurrent();
 
-                if (!Str::startsWith($path, $company->id . '/portal')) {
-                    $path = route('portal.dashboard', ['company_id' => $company->id]);
-                }
-
-                return response()->json([
-                    'status' => null,
-                    'success' => true,
-                    'error' => false,
-                    'message' => trans('auth.login_redirect'),
-                    'data' => null,
-                    'redirect' => url($path),
-                ]);
-            }
-
-            $url = route($user->landing_page, ['company_id' => $company->id]);
+            $url = route('dashboard', ['company_id' => $company->id]);
 
             return response()->json([
                 'status' => null,
@@ -124,14 +86,33 @@ class Register extends Controller
         }
     }
 
+    protected function createCompanyForUser(User $user)
+    {
+        try {
+            $job = new \App\Jobs\Common\CreateCompany((object) [
+                'name' => $user->name . "'s Company",
+                'email' => $user->email,
+                'locale' => config('app.locale'),
+                'currency' => 'USD',
+                'owner_id' => $user->id,
+            ]);
+
+            return dispatch($job);
+        } catch (\Exception $e) {
+            Log::error('Company creation failed:', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+
     protected function createUser(array $data): User
     {
         return User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
-            'enabled' => true, // Ensure the user is enabled by default
-            'company_id' => 1, // Assign the user to a default company
+            'enabled' => true,
+            'company_id' => 1,
             'locale' => config('app.locale'),
             'created_from' => 'registration',
             'created_by' => null,
